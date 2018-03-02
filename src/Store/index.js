@@ -40,9 +40,7 @@ const ModelFactory = (name, processGunChange) =>
     typeName: types.optional(types.literal(name), name)
   })
     .named(name)
-    .volatile(self => ({
-      _status: "loaded"
-    }))
+    .volatile(self => ({ _status: "loaded" }))
     .views(self => ({
       get whenLoaded() {
         return Promise.resolve(self);
@@ -83,20 +81,20 @@ const ModelFactory = (name, processGunChange) =>
 const RequestFactory = allTypes =>
   BaseModel.named("Request")
     .props({
-      typeName: types.optional(types.literal("Request"), "Request"),
-      type: types.frozen
+      typeName: types.enumeration("TypeName", allTypes.map(type => type.name))
     })
     .actions(() => ({
       postProcessSnapshot: snapshot => ({ ...snapshot, type: undefined })
     }))
-    .volatile(self => ({
-      _status: "requested"
-    }))
+    .volatile(self => ({ _status: "requested" }))
     .extend(self => {
       let handler,
         resolveWhenLoaded = () => {};
       return {
         views: {
+          get type() {
+            return allTypes.find(type => type.name === self.typeName);
+          },
           get whenLoaded() {
             return new Promise(resolve => (resolveWhenLoaded = resolve));
           }
@@ -173,7 +171,7 @@ const StoreFactory = allTypes => {
           }
           self.requests.set(identifier, {
             id: identifier,
-            type: type
+            typeName: type.name
           });
           return self.requests.get(identifier);
         },
@@ -189,4 +187,4 @@ const StoreFactory = allTypes => {
     });
 };
 
-module.exports = { typeToMapName, ModelFactory, StoreFactory };
+module.exports = { ModelFactory, StoreFactory };
