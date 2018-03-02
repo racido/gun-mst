@@ -49,31 +49,55 @@ const ModelFactory = (name, processGunChange) =>
     .actions(self => {
       let handler;
       return {
+        cancelHandler() {
+          if (handler) {
+            console.log("off", self.id, getEnv(self).storeId);
+            handler.off();
+            handler = null;
+          }
+        },
+        beforeDestroy() {
+          self.cancelHandler();
+        },
         processGunChange:
           processGunChange ||
           (snapshot => {
+            console.log("gun change", {
+              ...snapshot,
+              s: getEnv(self).storeId
+            });
             applySnapshot(self, snapshot);
           }),
         afterAttach() {
-          if (handler) {
-            handler.off();
-          }
+          self.cancelHandler();
+          console.log("on", self.id, getEnv(self).storeId);
           handler = self.gun.on(
-            value => setTimeout(() => self.processGunChange(value), 0),
+            value => {
+              const cloned = { ...value };
+              delete cloned._;
+              if (getType(self).is(cloned)) {
+                self.processGunChange(cloned);
+              }
+            },
             { change: true }
           );
+
+          let count = 0;
           addDisposer(
             self,
             onSnapshot(self, snapshot => {
-              console.log(snapshot);
-              // self.gun && self.gun.put(snapshot);
+              if (count < 4) {
+                console.log("gun put", {
+                  ...snapshot,
+                  s: getEnv(self).storeId
+                });
+                self.gun.put(snapshot);
+                count++;
+              } else {
+                console.log(count++);
+              }
             })
           );
-        },
-        beforeDestroy() {
-          if (handler) {
-            handler.off();
-          }
         }
       };
     });
@@ -100,20 +124,6 @@ const RequestFactory = allTypes =>
           }
         },
         actions: {
-          afterAttach() {
-            self._status = "loading";
-            self.cancelHandler();
-            handler = self.gun.on(
-              value =>
-                setTimeout(() => {
-                  if (self.type.is(value)) {
-                    resolveWhenLoaded(getRoot(self).create(self.type, value));
-                    self.cancelHandler();
-                  }
-                }, 0),
-              { change: true }
-            );
-          },
           cancelHandler() {
             if (handler) {
               handler.off();
@@ -122,6 +132,25 @@ const RequestFactory = allTypes =>
           },
           beforeDestroy() {
             self.cancelHandler();
+          },
+          afterAttach() {
+            self._status = "loading";
+            self.cancelHandler();
+            handler = self.gun.val(
+              value =>
+                setTimeout(() => {
+                  if (self.type.is(value)) {
+                    // cancel this handler before it is needed again in the create
+                    self.cancelHandler();
+                    resolveWhenLoaded(
+                      // do not send update to gun
+                      // as we've just read it from gun
+                      getRoot(self).create(self.type, value, false)
+                    );
+                  }
+                }, 0),
+              { change: true }
+            );
           }
         }
       };
@@ -152,7 +181,7 @@ const StoreFactory = allTypes => {
         get(type, id) {
           return resolveIdentifier(type, self, id);
         },
-        create(type, snapshot) {
+        create(type, snapshot, updateGun = true) {
           if (allTypes.indexOf(type) === -1) {
             throw new Error(`${type.name} is not a known type to this store`);
           }
@@ -161,6 +190,11 @@ const StoreFactory = allTypes => {
             throw new Error(
               `${type.name}:${snapshot.id} already exists in the store`
             );
+          }
+          if (updateGun) {
+            getEnv(self)
+              .gun.get(snapshot.id)
+              .put(snapshot);
           }
           map.set(snapshot.id, snapshot);
           return map.get(snapshot.id);
