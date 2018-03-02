@@ -1,0 +1,13 @@
+{
+  "name": "gun-mst",
+  "version": "0.0.1",
+  "description": "link between mobx-state-tree and gun",
+  "main": "index.js",
+  "author": "Sjoerd de Jong <sjoerd@weett.nl>",
+  "license": "MIT",
+  "dependencies": {
+    "gun": "^0.9.96",
+    "jest": "^22.4.2",
+    "mobx-state-tree": "^1.3.1"
+  }
+}
