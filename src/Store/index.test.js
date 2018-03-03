@@ -63,16 +63,16 @@ describe("Store Creation", () => {
 
       doc1.setTitle("TJOP");
 
-      expect(
-        await new Promise(resolve =>
-          gun
-            .get("test")
-            .get("title")
-            .val(resolve)
-        )
-      ).toEqual("TJOP");
+      // expect(
+      //   await new Promise(resolve =>
+      //     gun
+      //       .get("test")
+      //       .get("title")
+      //       .val(resolve)
+      //   )
+      // ).toEqual("TJOP");
 
-      await delay(100);
+      // await delay(10);
 
       expect(doc2.title).toEqual("TJOP");
       // expect(true).toEqual(false);

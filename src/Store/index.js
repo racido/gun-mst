@@ -1,3 +1,4 @@
+const dset = require("dset");
 const {
   addDisposer,
   types,
@@ -7,7 +8,8 @@ const {
   getEnv,
   getSnapshot,
   applySnapshot,
-  onSnapshot,
+  onPatch,
+  applyPatch,
   getType
 } = require("mobx-state-tree");
 const { whenAsync } = require("mobx-utils");
@@ -51,7 +53,7 @@ const ModelFactory = (name, processGunChange) =>
       return {
         cancelHandler() {
           if (handler) {
-            console.log("off", self.id, getEnv(self).storeId);
+            // console.log("off", self.id, getEnv(self).storeId);
             handler.off();
             handler = null;
           }
@@ -62,40 +64,39 @@ const ModelFactory = (name, processGunChange) =>
         processGunChange:
           processGunChange ||
           (snapshot => {
-            console.log("gun change", {
-              ...snapshot,
-              s: getEnv(self).storeId
-            });
-            applySnapshot(self, snapshot);
+            // console.log("gun change", {
+            //   ...snapshot,
+            //   s: getEnv(self).storeId
+            // });
+            applySnapshot(self, { ...getSnapshot(self), ...snapshot });
           }),
         afterAttach() {
           self.cancelHandler();
-          console.log("on", self.id, getEnv(self).storeId);
+          // console.log("on", self.id, getEnv(self).storeId);
           handler = self.gun.on(
             value => {
+              // console.log("on value", value, getEnv(self).storeId);
               const cloned = { ...value };
               delete cloned._;
-              if (getType(self).is(cloned)) {
-                self.processGunChange(cloned);
-              }
+              self.processGunChange(cloned);
             },
             { change: true }
           );
 
-          let count = 0;
           addDisposer(
             self,
-            onSnapshot(self, snapshot => {
-              if (count < 4) {
-                console.log("gun put", {
-                  ...snapshot,
-                  s: getEnv(self).storeId
-                });
-                self.gun.put(snapshot);
-                count++;
-              } else {
-                console.log(count++);
-              }
+            onPatch(self, ({ op, path, value }) => {
+              const update = {};
+              dset(
+                update,
+                path.split("/").slice(1),
+                op === "remove" ? null : value
+              );
+              // console.log("gun put", {
+              //   ...update,
+              //   s: getEnv(self).storeId
+              // });
+              self.gun.put(update);
             })
           );
         }
@@ -136,20 +137,18 @@ const RequestFactory = allTypes =>
           afterAttach() {
             self._status = "loading";
             self.cancelHandler();
-            handler = self.gun.val(
-              value =>
-                setTimeout(() => {
-                  if (self.type.is(value)) {
-                    // cancel this handler before it is needed again in the create
-                    self.cancelHandler();
-                    resolveWhenLoaded(
-                      // do not send update to gun
-                      // as we've just read it from gun
-                      getRoot(self).create(self.type, value, false)
-                    );
-                  }
-                }, 0),
-              { change: true }
+            handler = self.gun.on(value =>
+              setTimeout(() => {
+                if (self.type.is(value)) {
+                  // cancel this handler before it is needed again in the create
+                  self.cancelHandler();
+                  resolveWhenLoaded(
+                    // do not send update to gun
+                    // as we've just read it from gun
+                    getRoot(self).create(self.type, value, false)
+                  );
+                }
+              }, 0)
             );
           }
         }

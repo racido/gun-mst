@@ -6,6 +6,7 @@
   "author": "Sjoerd de Jong <sjoerd@weett.nl>",
   "license": "MIT",
   "dependencies": {
+    "dset": "^1.0.1",
     "gun": "^0.9.96",
     "jest": "^22.4.2",
     "mobx": "^3.6.1",
