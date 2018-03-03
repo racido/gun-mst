@@ -1,4 +1,4 @@
-const dset = require("dset");
+const deepSet = require("dset");
 const {
   addDisposer,
   types,
@@ -37,7 +37,11 @@ const BaseModel = types
     };
   });
 
-const ModelFactory = (name, processGunChange) =>
+const ModelFactory = (
+  name,
+  processGunChange = self => snapshot =>
+    applySnapshot(self, { ...getSnapshot(self), ...snapshot })
+) =>
   BaseModel.props({
     typeName: types.optional(types.literal(name), name)
   })
@@ -61,15 +65,7 @@ const ModelFactory = (name, processGunChange) =>
         beforeDestroy() {
           self.cancelHandler();
         },
-        processGunChange:
-          processGunChange ||
-          (snapshot => {
-            // console.log("gun change", {
-            //   ...snapshot,
-            //   s: getEnv(self).storeId
-            // });
-            applySnapshot(self, { ...getSnapshot(self), ...snapshot });
-          }),
+        processGunChange: processGunChange(self),
         afterAttach() {
           self.cancelHandler();
           // console.log("on", self.id, getEnv(self).storeId);
@@ -87,7 +83,7 @@ const ModelFactory = (name, processGunChange) =>
             self,
             onPatch(self, ({ op, path, value }) => {
               const update = {};
-              dset(
+              deepSet(
                 update,
                 path.split("/").slice(1),
                 op === "remove" ? null : value
