@@ -126,7 +126,7 @@ describe("Store Creation", () => {
     expect(goal.description).toEqual("test");
   });
 
-  it("supports array references (one to many)", () => {
+  it.only("supports array references (one to many)", () => {
     let goalUpdates = 0;
     const Goal = ModelFactory("Goal", {
       props: {
@@ -160,18 +160,18 @@ describe("Store Creation", () => {
     const store = StoreFactory([Project, Goal]).create({}, { gun });
 
     const goal = store.create(Goal, {
-      id: "goal",
-      description: "todo"
+      id: "goal1",
+      description: "todo1"
     });
     const project = store.create(Project, {
-      id: "test",
+      id: "test2",
       title: "TITLE",
-      goals: ["goal"]
+      goals: ["goal1"]
     });
 
     expect(project.title).toEqual("TITLE");
-    expect(goal.description).toEqual("todo");
-    expect(project.goals[0].description).toEqual("todo");
+    expect(goal.description).toEqual("todo1");
+    expect(project.goals[0].description).toEqual("todo1");
 
     expect(projectUpdates).toEqual(0);
     expect(goalUpdates).toEqual(1);
@@ -181,6 +181,7 @@ describe("Store Creation", () => {
       description: "todo2"
     });
     project.addGoal(goal2);
+    expect(projectUpdates).toEqual(1);
     expect(project.goals[1].description).toEqual("todo2");
 
     // goal.updateDescription("test");
