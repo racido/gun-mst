@@ -41,8 +41,10 @@ const BaseModel = types
 
 const ModelFactory = (
   name,
-  processGunChange = self => snapshot =>
-    applySnapshot(self, { ...getSnapshot(self), ...snapshot })
+  {
+    processGunChange = self => snapshot =>
+      applySnapshot(self, { ...getSnapshot(self), ...snapshot })
+  }
 ) =>
   BaseModel.props({
     typeName: types.optional(types.literal(name), name)

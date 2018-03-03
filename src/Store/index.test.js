@@ -22,7 +22,7 @@ describe("Store Creation", () => {
   });
 
   it("creates a store", () => {
-    const Project = ModelFactory("Project").props({
+    const Project = ModelFactory("Project", {}).props({
       title: types.maybe(types.string)
     });
 
@@ -36,7 +36,7 @@ describe("Store Creation", () => {
   it(
     "store can store instances",
     async () => {
-      const Project = ModelFactory("Project")
+      const Project = ModelFactory("Project", {})
         .props({
           title: types.maybe(types.string)
         })
@@ -76,16 +76,21 @@ describe("Store Creation", () => {
 
   it("supports references", () => {
     let projectUpdates = 0;
-    const Project = ModelFactory("Project", self => snapshot => {
-      projectUpdates++;
-      applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+    const Project = ModelFactory("Project", {
+      processGunChange: self => snapshot => {
+        projectUpdates++;
+        applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+      }
     }).props({
       title: types.maybe(types.string)
     });
+
     let goalUpdates = 0;
-    const Goal = ModelFactory("Goal", self => snapshot => {
-      goalUpdates++;
-      applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+    const Goal = ModelFactory("Goal", {
+      processGunChange: self => snapshot => {
+        goalUpdates++;
+        applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+      }
     })
       .props({
         description: types.maybe(types.string),
