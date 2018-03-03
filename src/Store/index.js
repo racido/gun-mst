@@ -17,8 +17,44 @@ const {
 const { whenAsync } = require("mobx-utils");
 const { extendObservable, when } = require("mobx");
 
-const typeToMapName = type =>
-  type.name[0].toLowerCase() + type.name.substr(1) + "s";
+const typeToSingular = type => type.name[0].toLowerCase() + type.name.substr(1);
+const typeToPlural = type => typeToSingular(type) + "s";
+
+const getterFor = type => (identifier, self) =>
+  getRoot(self).getOrLoad(
+    typeof type === "function" ? type() : type,
+    identifier
+  );
+
+const baseReference = type =>
+  types.maybe(
+    types.reference(typeof type === "function" ? type() : type, {
+      get: getterFor(type),
+      set(node) {
+        return node.id;
+      }
+    })
+  );
+const reference = type =>
+  typeof type === "function"
+    ? types.late(`Late ${type.name}`, () => baseReference(type))
+    : baseReference(type);
+
+const baseArrayReference = type =>
+  types.maybe(
+    types.array(
+      types.reference(typeof type === "function" ? type() : type, {
+        get: getterFor(type),
+        set(node) {
+          return node.id;
+        }
+      })
+    )
+  );
+const arrayReference = type =>
+  typeof type === "function"
+    ? types.late(`Late [${type.name}]`, () => baseArrayReference(type))
+    : baseArrayReference(type);
 
 const BaseModel = types
   .model("BaseModel", {
@@ -43,7 +79,8 @@ const ModelFactory = (
   name,
   {
     processGunChange = self => snapshot =>
-      applySnapshot(self, { ...getSnapshot(self), ...snapshot })
+      applySnapshot(self, { ...getSnapshot(self), ...snapshot }),
+    references = {}
   }
 ) =>
   BaseModel.props({
@@ -161,7 +198,7 @@ const StoreFactory = allTypes => {
       requests: types.optional(types.map(RequestFactory(allTypes)), {}),
       // gunDocs: types.optional(types.map(DocFactory(allTypes)), {}),
       ...allTypes.reduce((props, type) => {
-        props[typeToMapName(type)] = types.optional(types.map(type), {});
+        props[typeToPlural(type)] = types.optional(types.map(type), {});
         return props;
       }, {})
     })
@@ -184,7 +221,7 @@ const StoreFactory = allTypes => {
           if (allTypes.indexOf(type) === -1) {
             throw new Error(`${type.name} is not a known type to this store`);
           }
-          const map = self[typeToMapName(type)];
+          const map = self[typeToPlural(type)];
           if (map.has(snapshot.id)) {
             throw new Error(
               `${type.name}:${snapshot.id} already exists in the store`
@@ -220,45 +257,11 @@ const StoreFactory = allTypes => {
     });
 };
 
-const getterFor = type => (identifier, self) =>
-  getRoot(self).getOrLoad(
-    typeof type === "function" ? type() : type,
-    identifier
-  );
-
-const baseReference = type =>
-  types.maybe(
-    types.reference(typeof type === "function" ? type() : type, {
-      get: getterFor(type),
-      set(node) {
-        return node.id;
-      }
-    })
-  );
-const reference = type =>
-  typeof type === "function"
-    ? types.late(`Late ${type.name}`, () => baseReference(type))
-    : baseReference(type);
-
-const baseArrayReference = type =>
-  types.maybe(
-    types.array(
-      types.reference(typeof type === "function" ? type() : type, {
-        get: getterFor(type),
-        set(node) {
-          return node.id;
-        }
-      })
-    )
-  );
-const arrayReference = type =>
-  typeof type === "function"
-    ? types.late(`Late [${type.name}]`, () => baseArrayReference(type))
-    : baseArrayReference(type);
-
 module.exports = {
   ModelFactory,
   StoreFactory,
   reference,
-  arrayReference
+  arrayReference,
+  typeToPlural,
+  typeToSingular
 };
