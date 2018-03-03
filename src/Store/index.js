@@ -78,6 +78,7 @@ const BaseModel = types
 const ModelFactory = (
   name,
   {
+    props = {},
     processGunChange = self => snapshot =>
       applySnapshot(self, { ...getSnapshot(self), ...snapshot }),
     references = {}
@@ -87,6 +88,13 @@ const ModelFactory = (
     typeName: types.optional(types.literal(name), name)
   })
     .named(name)
+    .props({
+      ...props,
+      ...Object.keys(references).reduce((props, key) => {
+        props[key] = reference(references[key]);
+        return props;
+      }, {})
+    })
     .volatile(self => ({ _status: "loaded" }))
     .views(self => ({
       get whenLoaded() {

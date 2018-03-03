@@ -87,20 +87,21 @@ describe("Store Creation", () => {
 
     let goalUpdates = 0;
     const Goal = ModelFactory("Goal", {
+      props: {
+        description: types.maybe(types.string)
+      },
+      references: {
+        project: Project
+      },
       processGunChange: self => snapshot => {
         goalUpdates++;
         applySnapshot(self, { ...getSnapshot(self), ...snapshot });
       }
-    })
-      .props({
-        description: types.maybe(types.string),
-        project: reference(Project)
-      })
-      .actions(self => ({
-        updateDescription(description) {
-          self.description = description;
-        }
-      }));
+    }).actions(self => ({
+      updateDescription(description) {
+        self.description = description;
+      }
+    }));
 
     const store = StoreFactory([Project, Goal]).create({}, { gun });
 
