@@ -74,7 +74,7 @@ describe("Store Creation", () => {
     1000
   );
 
-  it("supports references", () => {
+  it("supports references (many to one)", () => {
     let projectUpdates = 0;
     const Project = ModelFactory("Project", {
       processGunChange: self => snapshot => {
@@ -124,5 +124,68 @@ describe("Store Creation", () => {
     expect(projectUpdates).toEqual(1);
     expect(goalUpdates).toEqual(2);
     expect(goal.description).toEqual("test");
+  });
+
+  it("supports array references (one to many)", () => {
+    let goalUpdates = 0;
+    const Goal = ModelFactory("Goal", {
+      props: {
+        description: types.maybe(types.string)
+      },
+      processGunChange: self => snapshot => {
+        goalUpdates++;
+        applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+      }
+    });
+
+    let projectUpdates = 0;
+    const Project = ModelFactory("Project", {
+      processGunChange: self => snapshot => {
+        projectUpdates++;
+        applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+      },
+      references: {
+        goals: [Goal]
+      }
+    })
+      .props({
+        title: types.maybe(types.string)
+      })
+      .actions(self => ({
+        addGoal(goal) {
+          self.goals.push(goal);
+        }
+      }));
+
+    const store = StoreFactory([Project, Goal]).create({}, { gun });
+
+    const goal = store.create(Goal, {
+      id: "goal",
+      description: "todo"
+    });
+    const project = store.create(Project, {
+      id: "test",
+      title: "TITLE",
+      goals: ["goal"]
+    });
+
+    expect(project.title).toEqual("TITLE");
+    expect(goal.description).toEqual("todo");
+    expect(project.goals[0].description).toEqual("todo");
+
+    expect(projectUpdates).toEqual(0);
+    expect(goalUpdates).toEqual(1);
+
+    const goal2 = store.create(Goal, {
+      id: "goal2",
+      description: "todo2"
+    });
+    project.addGoal(goal2);
+    expect(project.goals[1].description).toEqual("todo2");
+
+    // goal.updateDescription("test");
+    // expect(projectUpdates).toEqual(0);
+    // expect(goalUpdates).toEqual(2);
+    // expect(goal.description).toEqual("test");
   });
 });

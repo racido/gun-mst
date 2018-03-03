@@ -1,4 +1,3 @@
-const deepSet = require("dset");
 const {
   addDisposer,
   types,
@@ -91,10 +90,44 @@ const ModelFactory = (
     .props({
       ...props,
       ...Object.keys(references).reduce((props, key) => {
-        props[key] = reference(references[key]);
+        ref = references[key];
+        if (Array.isArray(ref)) {
+          props[key] = arrayReference(ref[0]);
+        } else {
+          props[key] = reference(ref);
+        }
         return props;
       }, {})
     })
+
+    // because gun does not understand arrays, we map the
+    // array references into a string and vice versa
+    .preProcessSnapshot(snapshot => ({
+      ...snapshot,
+      ...Object.keys(references)
+        .filter(key => Array.isArray(references[key]) && !!snapshot[key])
+        .reduce((props, key) => {
+          // console.log(snapshot[key]);
+          props[key] =
+            typeof snapshot[key] === "string"
+              ? JSON.parse(snapshot[key])
+              : snapshot[key];
+          return props;
+        }, {})
+    }))
+    .actions(() => ({
+      postProcessSnapshot: snapshot => ({
+        ...snapshot,
+        ...Object.keys(references)
+          .filter(key => Array.isArray(references[key]))
+          .reduce((props, key) => {
+            // console.log(snapshot[key]);
+            props[key] = JSON.stringify(snapshot[key]);
+            return props;
+          }, {})
+      })
+    }))
+
     .volatile(self => ({ _status: "loaded" }))
     .views(self => ({
       get whenLoaded() {
@@ -102,7 +135,7 @@ const ModelFactory = (
       }
     }))
     .actions(self => {
-      let handler;
+      let handler, lastUpdate;
       return {
         cancelHandler() {
           if (handler) {
@@ -131,17 +164,15 @@ const ModelFactory = (
           addDisposer(
             self,
             onPatch(self, ({ op, path, value }) => {
-              const update = {};
-              deepSet(
-                update,
-                path.split("/").slice(1),
-                op === "remove" ? null : value
-              );
-              // console.log("gun put", {
-              //   ...update,
-              //   s: getEnv(self).storeId
-              // });
-              self.gun.put(update);
+              const key = path.split("/")[1];
+              const update = {
+                [key]: getSnapshot(self)[key] || null
+              };
+
+              if (JSON.stringify(update) !== JSON.stringify(lastUpdate)) {
+                lastUpdate = update;
+                self.gun.put(update);
+              }
             })
           );
         }
