@@ -1,7 +1,12 @@
-const { types } = require("mobx-state-tree");
+const { types, applySnapshot, getSnapshot } = require("mobx-state-tree");
 const Gun = require("gun");
 
-const { ModelFactory, StoreFactory } = require("./index");
+const {
+  ModelFactory,
+  StoreFactory,
+  reference,
+  arrayReference
+} = require("./index");
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -28,7 +33,7 @@ describe("Store Creation", () => {
     expect(doc.isLoaded).toEqual(true);
   });
 
-  it.only(
+  it(
     "store can store instances",
     async () => {
       const Project = ModelFactory("Project")
@@ -63,20 +68,55 @@ describe("Store Creation", () => {
 
       doc1.setTitle("TJOP");
 
-      // expect(
-      //   await new Promise(resolve =>
-      //     gun
-      //       .get("test")
-      //       .get("title")
-      //       .val(resolve)
-      //   )
-      // ).toEqual("TJOP");
-
-      // await delay(10);
-
       expect(doc2.title).toEqual("TJOP");
       // expect(true).toEqual(false);
     },
     1000
   );
+
+  it("supports references", () => {
+    let projectUpdates = 0;
+    const Project = ModelFactory("Project", self => snapshot => {
+      projectUpdates++;
+      applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+    }).props({
+      title: types.maybe(types.string)
+    });
+    let goalUpdates = 0;
+    const Goal = ModelFactory("Goal", self => snapshot => {
+      goalUpdates++;
+      applySnapshot(self, { ...getSnapshot(self), ...snapshot });
+    })
+      .props({
+        description: types.maybe(types.string),
+        project: reference(Project)
+      })
+      .actions(self => ({
+        updateDescription(description) {
+          self.description = description;
+        }
+      }));
+
+    const store = StoreFactory([Project, Goal]).create({}, { gun });
+
+    const project = store.create(Project, { id: "test", title: "TITLE" });
+    const goal = store.create(Goal, {
+      id: "goal",
+      description: "todo",
+      project: "test"
+    });
+
+    expect(project.title).toEqual("TITLE");
+    expect(goal.description).toEqual("todo");
+    expect(goal.project.title).toEqual("TITLE");
+
+    expect(projectUpdates).toEqual(1);
+    expect(goalUpdates).toEqual(1);
+
+    goal.updateDescription("test");
+
+    expect(projectUpdates).toEqual(1);
+    expect(goalUpdates).toEqual(2);
+    expect(goal.description).toEqual("test");
+  });
 });

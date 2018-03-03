@@ -10,7 +10,9 @@ const {
   applySnapshot,
   onPatch,
   applyPatch,
-  getType
+  getType,
+  hasParent,
+  getParent
 } = require("mobx-state-tree");
 const { whenAsync } = require("mobx-utils");
 const { extendObservable, when } = require("mobx");
@@ -216,4 +218,45 @@ const StoreFactory = allTypes => {
     });
 };
 
-module.exports = { ModelFactory, StoreFactory };
+const getterFor = type => (identifier, self) =>
+  getRoot(self).getOrLoad(
+    typeof type === "function" ? type() : type,
+    identifier
+  );
+
+const baseReference = type =>
+  types.maybe(
+    types.reference(typeof type === "function" ? type() : type, {
+      get: getterFor(type),
+      set(node) {
+        return node.id;
+      }
+    })
+  );
+const reference = type =>
+  typeof type === "function"
+    ? types.late(`Late ${type.name}`, () => baseReference(type))
+    : baseReference(type);
+
+const baseArrayReference = type =>
+  types.maybe(
+    types.array(
+      types.reference(typeof type === "function" ? type() : type, {
+        get: getterFor(type),
+        set(node) {
+          return node.id;
+        }
+      })
+    )
+  );
+const arrayReference = type =>
+  typeof type === "function"
+    ? types.late(`Late [${type.name}]`, () => baseArrayReference(type))
+    : baseArrayReference(type);
+
+module.exports = {
+  ModelFactory,
+  StoreFactory,
+  reference,
+  arrayReference
+};
