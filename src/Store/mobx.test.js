@@ -1,138 +1,157 @@
-const { observable, intercept, extendObservable, useStrict } = require("mobx");
+const {
+  observable,
+  intercept,
+  extendObservable,
+  useStrict,
+  isObservableArray
+} = require("mobx");
 const Gun = require("gun/gun");
 
 useStrict(true);
 
-const META_KEY = "_deepObservable";
+const META_KEY = "_gunObservable";
 
-const isDeepObservable = obj => typeof obj === "object" && !!obj[META_KEY];
-const getMeta = obj => (isDeepObservable(obj) && obj[META_KEY]) || null;
+const isGunObservable = obj => typeof obj === "object" && !!obj[META_KEY];
+const getMeta = obj => (isGunObservable(obj) && obj[META_KEY]) || null;
 
-const deepObservable = (source, meta = {}) => {
-  let soul;
-  if (typeof source === "string") {
-    soul = source;
-    source = {};
-  }
-
-  // apply defaults
-  meta = {
-    ...{
-      parent: null,
-      name: null,
-      gun: null
-    },
-    ...meta
-  };
-
-  extendObservable(meta, {
-    get path() {
-      const { parent, name } = meta;
-      return parent && name ? getMeta(parent).path.concat(name) : [];
-    },
-    get _onChange() {
-      return (
-        meta.onChange ||
-        (meta.parent && getMeta(meta.parent)._onChange) ||
-        (change => console.log("no onChange handler for", change))
-      );
-    }
-  });
-
-  const obj = observable(source);
-
-  extendObservable(obj, {
-    get [META_KEY]() {
-      // getters are not enumerated
-      return meta;
-    }
-  });
-
-  intercept(obj, change => {
-    const { object, type, name, oldValue = object[name] } = change;
-    let { newValue } = change;
-
-    switch (type) {
-      case "update":
-      case "add":
-        if (typeof newValue === "object") {
-          const getGunRef = obj =>
-            (Object.keys(obj).length === 1 && obj["#"]) || null;
-          const refSoul = getGunRef(newValue);
-          if (refSoul) {
-            newValue = deepObservable(refSoul, { parent: object, name });
-          } else if (isDeepObservable(newValue)) {
-          } else {
-            newValue = deepObservable(newValue, { parent: object, name });
-          }
-        }
-        meta._onChange([meta.path, { [name]: newValue }]);
-        return { object, type, name, newValue };
-      default:
-        console.log("not handled type", type);
-        return change;
-    }
-  });
-
-  return obj;
+const getSoul = gun => gun._.soul;
+const throwError = message => {
+  throw new Error(message);
 };
 
-it("observes prop changes", () => {
-  let lastChange;
-  const obj = deepObservable(
-    { a: "A" },
-    {
-      onChange: change => {
-        lastChange = change;
-      }
-    }
+const isGunPrimitive = value =>
+  value == null ||
+  typeof value === "boolean" ||
+  typeof value === "number" ||
+  typeof value === "string";
+const isGunRef = value =>
+  !!(
+    value != null &&
+    typeof value === "object" &&
+    Object.keys(value).length === 1 &&
+    value["#"]
   );
-  console.log(obj);
-  console.log(lastChange);
+const onlyGunPrimitives = object =>
+  Object.keys(source)
+    .filter(isGunPrimitive)
+    .reduce((object, key) => ((object[key] = source[key]), object), {});
+const onlyGunNonPrimitives = object =>
+  Object.keys(source)
+    .filter(val => !isGunPrimitive(val))
+    .reduce((object, key) => ((object[key] = source[key]), object), {});
 
-  expect(isDeepObservable(obj)).toEqual(true);
+const gunObservable = (gun, source = {}) => {
+  const soul = getSoul(gun);
+  if (soul == null) {
+    throwError("root gun object is not allowed");
+  }
 
-  extendObservable(obj, { b: { b: "B" } });
-  expect(isDeepObservable(obj.b)).toEqual(true);
+  gunObservable.cache = gunObservable.cache || {};
+  if (gunObservable.cache[soul]) return gunObservable.cache[soul];
 
-  console.log(lastChange);
-  console.log(JSON.stringify(lastChange));
+  const value = isGunRef(source) ? {} : source || {};
+  // write the object to gun, empty object is a no-op, null is clear
+  gun.put(value);
 
-  obj.b.b = "c";
-  console.log(lastChange);
+  // keep the non object
+  const object = observable(value);
+  extendObservable(object, {
+    get [META_KEY]() {
+      return { gun };
+    },
+    get set() {
+      return (key, value) => extendObservable(object, { [key]: value });
+    }
+  });
 
-  expect(getMeta(obj.b).path).toEqual(["b"]);
-  expect(getMeta(obj).path).toEqual([]);
+  const lastValues = {};
 
-  // obj.a = "B";
-  obj.b; //?
-  console.log(obj.a);
-  console.log(obj.b.b);
+  intercept(object, change => {
+    const { object, type, name } = change;
+    const oldValue = object[name];
+    let { newValue } = change;
 
-  // obj.b.b = "C";
+    console.log(type);
+    console.log(name);
+    console.log(newValue);
 
-  console.log(obj.b.parent);
+    if (Array.isArray(newValue) || isObservableArray(newValue)) {
+      throwError("setting arrays is not allowed");
+    }
 
-  // expect(true).toEqual(false);
+    if (name != "_" && (type === "update" || type === "add")) {
+      if (isGunPrimitive(oldValue) && !isGunPrimitive(newValue)) {
+        delete lastValues[name];
+        newValue = gunObservable(gun.get(name), newValue);
+      } else if (
+        false &&
+        isGunObservable(oldValue) &&
+        isGunPrimitive(newValue)
+      ) {
+        // FIXME should we stop listeners? Maybe the solution is reference counting
+        getMeta(oldValue).gun.off(); // stop the listener
+      } else if (lastValues[name] !== newValue) {
+        lastValues[name] = newValue;
+        gun.put({ [name]: newValue });
+      }
 
-  // obj.a = "C";
-  // obj.a = null;
-});
+      return { object, type, name, newValue };
+    } else {
+      return change;
+    }
+  });
 
-it("knows about Gun", async () => {
+  gun.on(
+    change => {
+      Object.keys(change).forEach(name => {
+        const value = change[name];
+        if (name !== "_" && !isGunPrimitive(value)) {
+          delete lastValues[name];
+          extendObservable(object, { [name]: value });
+        } else if (lastValues[name] !== value) {
+          lastValues[name] = value;
+          extendObservable(object, { [name]: value });
+        }
+      });
+    },
+    { change: true }
+  );
+
+  gunObservable.cache[soul] = object;
+  return object;
+};
+
+it("can overwrite properties", async () => {
   // const gun = Gun({ localStorage: false });
   const gun = Gun({ file: "test.json" });
 
-  let doc = gun.get("doc"); //.get("user");
+  let gunDoc,
+    doc = gunObservable(gun.get("data"), { key: "value" });
 
-  gun._.soul; //?
+  expect(doc.key).toEqual("value");
+  gunDoc = await new Promise(resolve => gun.get("data").val(resolve));
+  expect(gunDoc.key).toEqual("value");
 
-  Object.keys(doc._); //?
-  doc._.soul; //?
+  doc.key = "value2";
+  expect(doc.key).toEqual("value2");
+  gunDoc = await new Promise(resolve => gun.get("data").val(resolve));
+  expect(gunDoc.key).toEqual("value2");
+});
 
-  doc.put({ key: "value" });
+it("can add properties", async () => {
+  // const gun = Gun({ localStorage: false });
+  const gun = Gun({ file: "test.json" });
 
-  const value = await new Promise(resolve => doc.val(resolve)); //?
+  let gunDoc,
+    doc = gunObservable(gun.get("data2"), { key: "value" });
 
-  await new Promise(resolve => setTimeout(resolve, 10));
+  expect(doc.key).toEqual("value");
+  gunDoc = await new Promise(resolve => gun.get("data2").val(resolve));
+  expect(gunDoc.key).toEqual("value");
+
+  doc.set("key2", "value2");
+
+  expect(doc.key2).toEqual("value2");
+  gunDoc = await new Promise(resolve => gun.get("data2").val(resolve));
+  expect(gunDoc.key2).toEqual("value2");
 });
