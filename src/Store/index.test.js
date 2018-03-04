@@ -18,7 +18,7 @@ describe("Store Creation", () => {
   let gun;
 
   beforeEach(async () => {
-    gun = Gun({ file: null });
+    gun = Gun({ localStorage: false });
   });
 
   it("creates a store", () => {
@@ -126,7 +126,7 @@ describe("Store Creation", () => {
     expect(goal.description).toEqual("test");
   });
 
-  it.only("supports array references (one to many)", () => {
+  it("supports array references (one to many)", () => {
     let goalUpdates = 0;
     const Goal = ModelFactory("Goal", {
       props: {
