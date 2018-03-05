@@ -15,6 +15,7 @@ const isGunObservable = obj => typeof obj === "object" && !!obj[META_KEY];
 const getMeta = obj => (isGunObservable(obj) && obj[META_KEY]) || null;
 
 const getSoul = gun => gun._.soul;
+const getRoot = gun => gun._.root;
 const throwError = message => {
   throw new Error(message);
 };
@@ -31,33 +32,43 @@ const isGunRef = value =>
     Object.keys(value).length === 1 &&
     value["#"]
   );
-const onlyGunPrimitives = object =>
-  Object.keys(source)
-    .filter(isGunPrimitive)
-    .reduce((object, key) => ((object[key] = source[key]), object), {});
-const onlyGunNonPrimitives = object =>
-  Object.keys(source)
-    .filter(val => !isGunPrimitive(val))
-    .reduce((object, key) => ((object[key] = source[key]), object), {});
 
+const gunObservableCache = {};
 const gunObservable = (gun, source = {}) => {
   const soul = getSoul(gun);
   if (soul == null) {
     throwError("root gun object is not allowed");
   }
 
-  gunObservable.cache = gunObservable.cache || {};
-  if (gunObservable.cache[soul]) return gunObservable.cache[soul];
+  if (gunObservableCache[soul]) {
+    const object = gunObservableCache[soul];
+    getMeta(object).addReference();
+    return object;
+  }
 
   const value = isGunRef(source) ? {} : source || {};
   // write the object to gun, empty object is a no-op, null is clear
   gun.put(value);
 
   // keep the non object
-  const object = observable(value);
+  const object = observable.shallowObject(value);
+  let referenceCount = 1;
   extendObservable(object, {
     get [META_KEY]() {
-      return { gun };
+      return {
+        gun,
+        addReference() {
+          referenceCount++;
+        },
+        removeReference() {
+          referenceCount--;
+          if (referenceCount === 0) {
+            gun.off();
+          } else if (referenceCount < 0) {
+            throwError("reference count leak");
+          }
+        }
+      };
     },
     get set() {
       return (key, value) => extendObservable(object, { [key]: value });
@@ -80,16 +91,21 @@ const gunObservable = (gun, source = {}) => {
     }
 
     if (name != "_" && (type === "update" || type === "add")) {
+      // update reference counting
+      if (isGunObservable(oldValue)) {
+        getMeta(oldValue).removeReference();
+      }
+
+      // JSON.stringify(oldValue) //?
+      // JSON.stringify(newValue) //?
+      // console.log(isGunRef(oldValue)) //?
+
       if (isGunPrimitive(oldValue) && !isGunPrimitive(newValue)) {
         delete lastValues[name];
         newValue = gunObservable(gun.get(name), newValue);
-      } else if (
-        false &&
-        isGunObservable(oldValue) &&
-        isGunPrimitive(newValue)
-      ) {
-        // FIXME should we stop listeners? Maybe the solution is reference counting
-        getMeta(oldValue).gun.off(); // stop the listener
+      } else if (isGunRef(newValue)) {
+        // link the observable
+        newValue = gunObservable(getRoot(gun).get(newValue["#"])); //?
       } else if (lastValues[name] !== newValue) {
         lastValues[name] = newValue;
         gun.put({ [name]: newValue });
@@ -117,7 +133,7 @@ const gunObservable = (gun, source = {}) => {
     { change: true }
   );
 
-  gunObservable.cache[soul] = object;
+  gunObservableCache[soul] = object;
   return object;
 };
 
@@ -154,4 +170,31 @@ it("can add properties", async () => {
   expect(doc.key2).toEqual("value2");
   gunDoc = await new Promise(resolve => gun.get("data2").val(resolve));
   expect(gunDoc.key2).toEqual("value2");
+});
+
+it("returns duplicates as same object", async () => {
+  // const gun = Gun({ localStorage: false });
+  const gun = Gun({ file: "test.json" });
+
+  const doc1 = gunObservable(gun.get("data3"), { key: "value" });
+  const doc2 = gunObservable(gun.get("data3"), { key: "value" });
+
+  expect(doc1).toEqual(doc2);
+});
+
+it("creates new objects when setting objects", async () => {
+  // const gun = Gun({ localStorage: false });
+  const gun = Gun({ file: "test.json" });
+
+  let gunDoc,
+    doc = gunObservable(gun.get("data4"), { key: { sub: "value" } });
+
+  expect(doc.key.sub).toEqual("value");
+  gunDoc = await new Promise(resolve =>
+    gun
+      .get("data4")
+      .get("key")
+      .val(resolve)
+  );
+  expect(gunDoc.sub).toEqual("value");
 });
