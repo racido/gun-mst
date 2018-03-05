@@ -80,9 +80,9 @@ const gunObservable = (gun, source = {}) => {
     const oldValue = object[name];
     let { newValue } = change;
 
-    console.log(type);
-    console.log(name);
-    console.log(newValue);
+    // console.log(type);
+    // console.log(name);
+    // console.log(newValue);
 
     if (Array.isArray(newValue) || isObservableArray(newValue)) {
       throwError("setting arrays is not allowed");
@@ -98,15 +98,15 @@ const gunObservable = (gun, source = {}) => {
         getMeta(oldValue).removeReference();
       }
 
-      console.log(oldValue);
-      console.log(newValue);
+      // console.log(oldValue);
+      // console.log(newValue);
 
       if (isGunPrimitive(oldValue) && !isGunPrimitive(newValue)) {
         delete lastValues[name];
-        oldValue; //?
-        newValue; //?
-        name; //?
-        getSoul(gun); //?
+        // oldValue; //?
+        // newValue; //?
+        // name; //?
+        // getSoul(gun); //?
         newValue = gunObservable(gun.get(name), newValue);
       } else if (isGunRef(newValue)) {
         newValue = gunObservable(getRoot(gun).get(newValue["#"]));
